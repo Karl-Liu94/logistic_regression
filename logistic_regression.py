@@ -31,49 +31,69 @@ def predict(X, W, b):
 def predict_class(X, W, b, threshold=0.5):
     return (predict(X, W, b) >= threshold).astype(int)
 
-# 交叉熵损失函数
-def loss(X, Y, W, b):
+# 交叉熵损失函数（带正则化）
+def loss(X, Y, W, b, lambda_=0, penalty='l2'):
     m = len(Y)
     y_pred = predict(X, W, b)
     # 避免log(0)导致的数值问题
     epsilon = 1e-15
     y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
     
-    loss = -1/m * np.sum(Y * np.log(y_pred) + (1 - Y) * np.log(1 - y_pred))
-    return loss
+    # 交叉熵损失
+    cross_entropy = -1/m * np.sum(Y * np.log(y_pred) + (1 - Y) * np.log(1 - y_pred))
+    
+    # 添加正则化项
+    if lambda_ > 0:
+        if penalty == 'l2':  # L2正则化 (Ridge)
+            reg_term = lambda_ * np.sum(W**2) / (2*m)
+        elif penalty == 'l1':  # L1正则化 (Lasso)
+            reg_term = lambda_ * np.sum(np.abs(W)) / m
+        else:
+            raise ValueError("正则化类型必须是'l1'或'l2'")
+        
+        return cross_entropy + reg_term
+    return cross_entropy
 
 # 成本函数（与损失函数相同）
-def cost_function(X, Y, W, b):
-    return loss(X, Y, W, b)
+def cost_function(X, Y, W, b, lambda_=0, penalty='l2'):
+    return loss(X, Y, W, b, lambda_, penalty)
 
-# 梯度
-def gradient(X, Y, W, b):
+# 梯度（带正则化）
+def gradient(X, Y, W, b, lambda_=0, penalty='l2'):
     m = len(Y)
     y_pred = predict(X, W, b)
     error = y_pred - Y
     
+    # 基本梯度
     dW = 1/m * np.matmul(X.T, error)
     db = 1/m * np.sum(error)
+    
+    # 添加正则化项的梯度
+    if lambda_ > 0:
+        if penalty == 'l2':  # L2正则化 (Ridge)
+            dW += (lambda_ / m) * W
+        elif penalty == 'l1':  # L1正则化 (Lasso)
+            dW += (lambda_ / m) * np.sign(W)
     
     return dW, db
 
 # 更新参数
-def update_parameters(X, Y, W, b, learning_rate):
-    dW, db = gradient(X, Y, W, b)
+def update_parameters(X, Y, W, b, learning_rate, lambda_=0, penalty='l2'):
+    dW, db = gradient(X, Y, W, b, lambda_, penalty)
     W = W - learning_rate * dW
     b = b - learning_rate * db
     return W, b
 
 # 训练
-def train(X, Y, W, b, learning_rate, num_iterations):
+def train(X, Y, W, b, learning_rate, num_iterations, lambda_=0, penalty='l2'):
     W_history = []
     b_history = []
     cost_history = []
     for i in range(num_iterations):
-        W, b = update_parameters(X, Y, W, b, learning_rate)
+        W, b = update_parameters(X, Y, W, b, learning_rate, lambda_, penalty)
         W_history.append(W)
         b_history.append(b)
-        cost_history.append(cost_function(X, Y, W, b))
+        cost_history.append(cost_function(X, Y, W, b, lambda_, penalty))
         
         if (i+1) % 1000 == 0 or i == 0:
             y_pred_class = predict_class(X, W, b)
@@ -128,13 +148,16 @@ def main():
     b = 0
     learning_rate = 0.1  # 学习率
     num_iterations = 5000  # 迭代次数
+    lambda_ = 0.01  # 正则化参数
+    penalty = 'l2'  # 'l1'或'l2'
     
     # 训练模型
-    W, b, cost_history, W_history, b_history = train(X_norm, Y, W, b, learning_rate, num_iterations)
+    W, b, cost_history, W_history, b_history = train(X_norm, Y, W, b, learning_rate, num_iterations, lambda_, penalty)
     
     # 还原参数到原始尺度
     W_original, b_original = denormalize_parameters(W, b, mean_X, std_X)
     print(f"原始尺度参数 - W: {W_original}, b: {b_original}")
+    print(f"正则化类型: {penalty}, 正则化参数: {lambda_}")
     
     # 评估模型
     y_pred = predict_class(X_norm, W, b)
