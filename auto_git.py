@@ -194,6 +194,29 @@ if __name__ == "__main__":
         # 直接构造仓库URL，确保与GitHub上的仓库名匹配
         repo_url = f"https://github.com/{username}/{repo_name}.git"
         
+        print(f"使用仓库URL: {repo_url}")
+        
+        # 检查远程连接
+        original_dir = os.getcwd()
+        os.chdir(project_dir)
+        
+        # 检查远程仓库URL
+        try:
+            remote_url = subprocess.run(["git", "remote", "get-url", "origin"], 
+                                     capture_output=True, text=True)
+            
+            if remote_url.returncode == 0:
+                current_url = remote_url.stdout.strip()
+                print(f"当前远程URL: {current_url}")
+                
+                if current_url != repo_url:
+                    print(f"更新远程URL从 {current_url} 到 {repo_url}")
+                    subprocess.run(["git", "remote", "set-url", "origin", repo_url], check=True)
+        except:
+            print("未能获取远程URL")
+        
+        os.chdir(original_dir)
+        
         # 上传代码，直接提供仓库URL
         upload_to_github(
             local_dir=project_dir,
