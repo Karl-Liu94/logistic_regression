@@ -14,7 +14,7 @@ def generate_samples(num_samples):
     x2 = 6 *np.random.randn(num_samples) + 2
     noise = np.random.randn(num_samples) 
     x = np.column_stack((x1, x2))
-    y = 5 * x1 + 7 * x2 + 9 + noise
+    y = 5 * x1 + 7 * x2 + 9 + noise 
     return x,y
 #预测
 def predict(X,W,b):
