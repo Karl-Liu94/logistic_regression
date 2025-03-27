@@ -54,6 +54,9 @@ def create_github_repo(repo_name, description="", private=False, username=None, 
     if response.status_code == 201:
         print(f"成功创建仓库: {repo_name}")
         return f"https://github.com/{username}/{repo_name}.git"
+    elif response.status_code == 422:  # 仓库已存在
+        print(f"仓库已存在: {repo_name}")
+        return f"https://github.com/{username}/{repo_name}.git"
     else:
         print(f"创建仓库失败: {response.status_code}")
         print(response.json())
@@ -172,7 +175,7 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
 # 使用示例
 if __name__ == "__main__":
     # 首次设置
-    setup_github_automation()  # 第一次运行时取消注释此行
+    # setup_github_automation()  # 第一次运行时取消注释此行
     
     # 创建requirements.txt
     os.system("pip freeze > requirements.txt")
@@ -181,8 +184,21 @@ if __name__ == "__main__":
     project_dir = os.getcwd()  # 当前目录
     repo_name = "linear-regression-demo"  # 仓库名
     
-    upload_to_github(
-        local_dir=project_dir,
-        repo_name=repo_name,
-        commit_message="添加线性回归实现和环境配置"
-    )
+    # 从凭据文件读取用户名
+    credentials_file = os.path.expanduser("~/.github_credentials")
+    if os.path.exists(credentials_file):
+        with open(credentials_file, "r") as f:
+            credentials = json.loads(f.read())
+            username = credentials["username"]
+            
+        # 直接构造仓库URL，确保与GitHub上的仓库名匹配
+        repo_url = f"https://github.com/{username}/{repo_name}.git"
+        
+        # 上传代码，直接提供仓库URL
+        upload_to_github(
+            local_dir=project_dir,
+            repo_url=repo_url,
+            commit_message="添加线性回归实现和环境配置"
+        )
+    else:
+        print("找不到凭据文件，请先运行setup_github_automation()")
