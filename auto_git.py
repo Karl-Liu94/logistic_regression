@@ -129,39 +129,75 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
                 subprocess.run(["git", "remote", "add", "origin", repo_url], check=True)
                 print(f"添加远程仓库: {repo_url}")
             
-            # 推送到GitHub
-            subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
-            print(f"代码已成功推送到分支: {current_branch}")
+            # 尝试推送到GitHub
+            try:
+                # 尝试常规推送
+                push_result = subprocess.run(["git", "push", "-u", "origin", current_branch], 
+                                           capture_output=True, text=True)
+                
+                if push_result.returncode != 0:
+                    if "rejected" in push_result.stderr:
+                        print("推送被拒绝，远程和本地历史不同")
+                        
+                        # 提示用户选择操作
+                        print("\n可选操作:")
+                        print("1. 拉取远程代码并合并 (git pull)")
+                        print("2. 强制推送本地代码 (git push --force)")
+                        print("3. 放弃推送")
+                        
+                        choice = input("请选择 (默认1): ").strip() or "1"
+                        
+                        if choice == "1":
+                            # 尝试拉取并合并
+                            try:
+                                subprocess.run(["git", "pull", "--rebase", "origin", current_branch], check=True)
+                                subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
+                                print("已拉取远程代码并成功推送")
+                            except subprocess.CalledProcessError as e:
+                                print(f"拉取合并失败: {e}")
+                                return False
+                        elif choice == "2":
+                            # 强制推送
+                            subprocess.run(["git", "push", "--force", "origin", current_branch], check=True)
+                            print("已强制推送本地代码")
+                        else:
+                            print("已放弃推送")
+                            return False
+                    else:
+                        print(f"推送失败: {push_result.stderr}")
+                        return False
+                else:
+                    print(f"代码已成功推送到分支: {current_branch}")
+            except subprocess.CalledProcessError as e:
+                print(f"推送过程中出错: {e}")
+                return False
             
         else:
             print("没有变更需要提交")
             
             # 检查本地是否已有提交但未推送的内容
-            unpushed = subprocess.run(["git", "log", "@{u}..", "--oneline"], 
-                                    capture_output=True, text=True, shell=True)
-            
-            # 如果返回错误，可能是没有设置上游分支
-            if unpushed.returncode != 0:
-                # 获取当前分支
-                branch_cmd = subprocess.run(["git", "branch", "--show-current"], 
-                                         capture_output=True, text=True, check=True)
-                current_branch = branch_cmd.stdout.strip() or "main"
+            try:
+                unpushed = subprocess.run(["git", "log", "@{u}..", "--oneline"], 
+                                       capture_output=True, text=True)
                 
-                # 检查远程仓库是否已经设置
-                remote_check = subprocess.run(["git", "remote", "-v"], 
-                                          capture_output=True, text=True)
-                
-                if "origin" not in remote_check.stdout and repo_url:
-                    # 添加远程仓库
-                    subprocess.run(["git", "remote", "add", "origin", repo_url], check=True)
-                    print(f"添加远程仓库: {repo_url}")
-                
-                # 尝试推送当前分支
-                try:
-                    subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
-                    print(f"设置上游分支并推送到: {current_branch}")
-                except subprocess.CalledProcessError:
-                    print(f"无法推送到远程仓库，可能远程分支不存在或存在冲突")
+                if unpushed.returncode == 0 and unpushed.stdout.strip():
+                    print("有未推送的提交，尝试推送")
+                    
+                    # 获取当前分支
+                    branch_cmd = subprocess.run(["git", "branch", "--show-current"], 
+                                             capture_output=True, text=True, check=True)
+                    current_branch = branch_cmd.stdout.strip() or "main"
+                    
+                    # 尝试推送
+                    try:
+                        subprocess.run(["git", "push", "origin", current_branch], check=True)
+                        print(f"已推送到分支: {current_branch}")
+                    except subprocess.CalledProcessError as e:
+                        print(f"推送失败: {e}")
+                else:
+                    print("本地代码与远程一致，无需推送")
+            except:
+                print("检查未推送提交失败，可能是上游分支未设置")
             
         success = True
     except subprocess.CalledProcessError as e:
