@@ -113,11 +113,26 @@ def main():
     plt.xlabel('迭代次数')
     plt.ylabel('损失')
     
-    plt.subplot(1, 2, 2)
-    plt.scatter(X[:,0], Y, alpha=0.5, label='实际值')
-    plt.scatter(X[:,0], predict(X, W_original, b_original), alpha=0.5, label='预测值')
-    plt.legend()
-    plt.title('预测结果')
+    ax = plt.subplot(1, 2, 2, projection='3d')
+    # 创建网格点
+    x1_grid = np.linspace(min(X[:,0]), max(X[:,0]), 20)
+    x2_grid = np.linspace(min(X[:,1]), max(X[:,1]), 20)
+    X1, X2 = np.meshgrid(x1_grid, x2_grid)
+    # 计算预测平面
+    X_grid = np.column_stack((X1.ravel(), X2.ravel()))
+    Y_pred = predict(X_grid, W_original, b_original)
+    Y_pred = Y_pred.reshape(X1.shape)
+    
+    # 绘制预测平面
+    ax.plot_surface(X1, X2, Y_pred, alpha=0.3, cmap='viridis')
+    # 绘制实际数据点
+    ax.scatter(X[:,0], X[:,1], Y, c='r', marker='o', alpha=0.5, label='实际值')
+    
+    ax.set_xlabel('X1')
+    ax.set_ylabel('X2')
+    ax.set_zlabel('Y')
+    ax.legend()
+    ax.set_title('3D预测结果')
     plt.show()
 
 if __name__ == "__main__":
