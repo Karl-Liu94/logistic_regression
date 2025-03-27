@@ -65,6 +65,16 @@ def create_github_repo(repo_name, description="", private=False, username=None, 
 def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="自动提交"):
     """自动上传代码到GitHub仓库"""
     
+    # 初始化success变量，解决引用前未赋值的问题
+    success = False
+    
+    # 提取用户名，用于错误处理
+    username = None
+    if repo_url and "github.com" in repo_url:
+        parts = repo_url.replace("https://github.com/", "").replace(".git", "").split("/")
+        if len(parts) >= 1:
+            username = parts[0]
+    
     # 如果未提供repo_url但提供了repo_name，则尝试创建
     if not repo_url and repo_name:
         credentials_file = os.path.expanduser("~/.github_credentials")
@@ -78,6 +88,14 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
         else:
             print("未提供仓库URL，且无法找到凭据来创建仓库")
             return False
+    
+    # 如果仍然没有用户名，从凭据中获取
+    if username is None:
+        credentials_file = os.path.expanduser("~/.github_credentials")
+        if os.path.exists(credentials_file):
+            with open(credentials_file, "r") as f:
+                credentials = json.loads(f.read())
+                username = credentials["username"]
     
     # 切换到目标目录
     original_dir = os.getcwd()
@@ -136,6 +154,9 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
                                            capture_output=True, text=True)
                 
                 if push_result.returncode != 0:
+                    # 输出详细的推送错误信息
+                    print(f"推送失败: {push_result.stderr}")
+                    
                     if "rejected" in push_result.stderr:
                         print("推送被拒绝，远程和本地历史不同")
                         
@@ -153,6 +174,7 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
                                 subprocess.run(["git", "pull", "--rebase", "origin", current_branch], check=True)
                                 subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
                                 print("已拉取远程代码并成功推送")
+                                success = True
                             except subprocess.CalledProcessError as e:
                                 print(f"拉取合并失败: {e}")
                                 return False
@@ -160,14 +182,62 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
                             # 强制推送
                             subprocess.run(["git", "push", "--force", "origin", current_branch], check=True)
                             print("已强制推送本地代码")
+                            success = True
                         else:
                             print("已放弃推送")
                             return False
+                    elif "Repository not found" in push_result.stderr:
+                        # 确保我们有用户名和仓库名用于错误消息
+                        repo_name_display = repo_name or (repo_url.split("/")[-1].replace(".git", "") if repo_url else "未知仓库")
+                        username_display = username or "未知用户"
+                        
+                        print(f"仓库未找到。请确认以下内容:")
+                        print(f"1. 用户名 '{username_display}' 是否正确")
+                        print(f"2. 仓库名 '{repo_name_display}' 是否正确")
+                        print(f"3. 仓库是否已经在GitHub上创建")
+                        print(f"4. 您的token是否有足够权限")
+                        print(f"尝试访问: {repo_url.replace('.git', '')}")
+                        
+                        # 询问是否要尝试创建仓库
+                        choice = input("是否尝试重新创建仓库? (y/n): ").strip().lower()
+                        if choice == 'y':
+                            # 重新创建仓库
+                            credentials_file = os.path.expanduser("~/.github_credentials")
+                            if os.path.exists(credentials_file):
+                                with open(credentials_file, "r") as f:
+                                    credentials = json.loads(f.read())
+                                    token = credentials["token"]
+                                    # 使用之前提取的用户名或从凭据文件获取
+                                    username_to_use = username or credentials["username"]
+                                
+                                # 使用当前仓库名或从URL提取
+                                repo_name_to_use = repo_name or repo_name_display
+                                
+                                new_repo_url = create_github_repo(repo_name_to_use, username=username_to_use, token=token)
+                                if new_repo_url:
+                                    # 设置新的仓库URL
+                                    subprocess.run(["git", "remote", "set-url", "origin", new_repo_url], check=True)
+                                    print(f"已更新远程URL为: {new_repo_url}")
+                                    
+                                    # 再次尝试推送
+                                    push_attempt = subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
+                                    print("已成功推送到新创建的仓库")
+                                    success = True
+                                else:
+                                    print("仓库创建失败")
+                                    return False
+                            else:
+                                print("找不到凭据文件，无法创建仓库")
+                                return False
+                        else:
+                            print("放弃创建仓库")
+                            return False
                     else:
-                        print(f"推送失败: {push_result.stderr}")
+                        print("推送失败，原因未知")
                         return False
                 else:
                     print(f"代码已成功推送到分支: {current_branch}")
+                    success = True
             except subprocess.CalledProcessError as e:
                 print(f"推送过程中出错: {e}")
                 return False
@@ -192,12 +262,16 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
                     try:
                         subprocess.run(["git", "push", "origin", current_branch], check=True)
                         print(f"已推送到分支: {current_branch}")
+                        success = True
                     except subprocess.CalledProcessError as e:
                         print(f"推送失败: {e}")
                 else:
                     print("本地代码与远程一致，无需推送")
-            except:
-                print("检查未推送提交失败，可能是上游分支未设置")
+                    success = True
+            except Exception as e:
+                print(f"检查未推送提交失败: {e}")
+                print("可能是上游分支未设置")
+                success = True  # 不推送也算成功
             
         success = True
     except subprocess.CalledProcessError as e:
@@ -253,10 +327,11 @@ if __name__ == "__main__":
         
         os.chdir(original_dir)
         
-        # 上传代码，直接提供仓库URL
+        # 上传代码，直接提供仓库URL和仓库名（以便在错误处理中使用）
         upload_to_github(
             local_dir=project_dir,
             repo_url=repo_url,
+            repo_name=repo_name,  # 也传递仓库名，以便在错误处理中使用
             commit_message="添加线性回归实现和环境配置"
         )
     else:
