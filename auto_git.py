@@ -81,22 +81,85 @@ def upload_to_github(local_dir, repo_url=None, repo_name=None, commit_message="�
     os.chdir(local_dir)
     
     try:
-        # 初始化Git仓库
-        subprocess.run(["git", "init"], check=True)
+        # 检查是否已存在Git仓库
+        is_git_repo = os.path.exists('.git')
         
-        # 添加所有文件
-        subprocess.run(["git", "add", "."], check=True)
+        if not is_git_repo:
+            # 初始化Git仓库
+            subprocess.run(["git", "init"], check=True)
+            print("初始化新的Git仓库")
+        else:
+            print("使用已存在的Git仓库")
         
-        # 提交更改
-        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        # 检查是否有可提交的变更
+        status = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True)
+        has_changes = bool(status.stdout.strip())
         
-        # 添加远程仓库
-        subprocess.run(["git", "remote", "add", "origin", repo_url], check=True)
-        
-        # 推送到GitHub
-        subprocess.run(["git", "push", "-u", "origin", "master"], check=True)
-        
-        print(f"代码已成功上传到 {repo_url}")
+        if has_changes:
+            # 添加所有文件
+            subprocess.run(["git", "add", "."], check=True)
+            
+            # 提交更改
+            subprocess.run(["git", "commit", "-m", commit_message], check=True)
+            print("已提交本地更改")
+            
+            # 获取当前分支名
+            branch_cmd = subprocess.run(["git", "branch", "--show-current"], 
+                                       capture_output=True, text=True, check=True)
+            current_branch = branch_cmd.stdout.strip()
+            if not current_branch:  # 如果命令返回空，尝试其他方式获取
+                branch_cmd = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], 
+                                         capture_output=True, text=True, check=True)
+                current_branch = branch_cmd.stdout.strip()
+            
+            if not current_branch:  # 如果还是获取不到，默认为main
+                current_branch = "main"
+            
+            print(f"当前分支: {current_branch}")
+            
+            # 检查远程仓库是否已经设置
+            remote_check = subprocess.run(["git", "remote", "-v"], 
+                                      capture_output=True, text=True)
+            
+            if "origin" not in remote_check.stdout:
+                # 添加远程仓库
+                subprocess.run(["git", "remote", "add", "origin", repo_url], check=True)
+                print(f"添加远程仓库: {repo_url}")
+            
+            # 推送到GitHub
+            subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
+            print(f"代码已成功推送到分支: {current_branch}")
+            
+        else:
+            print("没有变更需要提交")
+            
+            # 检查本地是否已有提交但未推送的内容
+            unpushed = subprocess.run(["git", "log", "@{u}..", "--oneline"], 
+                                    capture_output=True, text=True, shell=True)
+            
+            # 如果返回错误，可能是没有设置上游分支
+            if unpushed.returncode != 0:
+                # 获取当前分支
+                branch_cmd = subprocess.run(["git", "branch", "--show-current"], 
+                                         capture_output=True, text=True, check=True)
+                current_branch = branch_cmd.stdout.strip() or "main"
+                
+                # 检查远程仓库是否已经设置
+                remote_check = subprocess.run(["git", "remote", "-v"], 
+                                          capture_output=True, text=True)
+                
+                if "origin" not in remote_check.stdout and repo_url:
+                    # 添加远程仓库
+                    subprocess.run(["git", "remote", "add", "origin", repo_url], check=True)
+                    print(f"添加远程仓库: {repo_url}")
+                
+                # 尝试推送当前分支
+                try:
+                    subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
+                    print(f"设置上游分支并推送到: {current_branch}")
+                except subprocess.CalledProcessError:
+                    print(f"无法推送到远程仓库，可能远程分支不存在或存在冲突")
+            
         success = True
     except subprocess.CalledProcessError as e:
         print(f"上传过程中出错: {e}")
